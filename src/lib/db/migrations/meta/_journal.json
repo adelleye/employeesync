@@ -8,6 +8,27 @@
       "when": 1746823332131,
       "tag": "0000_needy_deathbird",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1746958145663,
+      "tag": "0001_premium_famine",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747072208571,
+      "tag": "0002_illegal_johnny_blaze",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1747075618426,
+      "tag": "0003_harsh_moonstone",
+      "breakpoints": true
     }
   ]
 }
