@@ -4,9 +4,13 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { shiftTemplates } from "@/lib/db/schema";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
-import { AppError } from "@/lib/errors";
+import {
+  AppError,
+  NotAuthenticatedError,
+  CompanyNotFoundError,
+} from "@/lib/errors";
 import { eq, and } from "drizzle-orm";
-import { revalidateCompanyPaths } from "@/lib/cache/revalidateCompanyPaths";
+import { revalidateTag } from "next/cache";
 
 // Define the type for a shift template based on the Drizzle schema
 export type ShiftTemplate = typeof shiftTemplates.$inferSelect;
@@ -31,7 +35,9 @@ export async function listShiftTemplates({
 
 export async function createShiftTemplate(formData: FormData) {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
     const validated = ShiftTemplateSchema.safeParse({
       name: formData.get("name"),
@@ -52,19 +58,26 @@ export async function createShiftTemplate(formData: FormData) {
       startTime,
       endTime,
     });
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-shift-templates`);
     return { status: "success" };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
+    console.error("createShiftTemplate Error:", error);
     return { status: "error", message: "Failed to create template." };
   }
 }
 
 export async function updateShiftTemplate(formData: FormData) {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
     const id = formData.get("id");
     if (!id || typeof id !== "string") {
@@ -101,23 +114,31 @@ export async function updateShiftTemplate(formData: FormData) {
         locationId: locationId || null,
         startTime,
         endTime,
+        updatedAt: new Date(),
       })
       .where(
         and(eq(shiftTemplates.id, id), eq(shiftTemplates.companyId, companyId))
       );
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-shift-templates`);
     return { status: "success" };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
+    console.error("updateShiftTemplate Error:", error);
     return { status: "error", message: "Failed to update template." };
   }
 }
 
 export async function deleteShiftTemplate(id: string) {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
     const existing = await db.query.shiftTemplates.findFirst({
       where: and(
@@ -136,12 +157,17 @@ export async function deleteShiftTemplate(id: string) {
       .where(
         and(eq(shiftTemplates.id, id), eq(shiftTemplates.companyId, companyId))
       );
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-shift-templates`);
     return { status: "success" };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
+    console.error("deleteShiftTemplate Error:", error);
     return { status: "error", message: "Failed to delete template." };
   }
 }

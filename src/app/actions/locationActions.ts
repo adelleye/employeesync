@@ -4,10 +4,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { locations } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { revalidateCompanyPaths } from "@/lib/cache/revalidateCompanyPaths";
+import { revalidateTag } from "next/cache";
 import { type LocationFormState } from "@/types/formStates";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
-import { AppError } from "@/lib/errors";
+import {
+  AppError,
+  NotAuthenticatedError,
+  CompanyNotFoundError,
+} from "@/lib/errors";
 
 // Schema for validating location name
 const LocationSchema = z.object({
@@ -19,7 +23,9 @@ export async function createLocation(
   formData: FormData
 ): Promise<LocationFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = LocationSchema.safeParse({
@@ -37,10 +43,17 @@ export async function createLocation(
       name: name,
       companyId: companyId,
     });
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-locations`);
+    revalidateTag(`company-${companyId}-inventory`);
+    revalidateTag(`company-${companyId}-schedule`);
+
     return { status: "success", message: "Location created successfully." };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to create location:", error);
@@ -62,7 +75,9 @@ export async function updateLocation(
   formData: FormData
 ): Promise<LocationFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = UpdateLocationSchema.safeParse({
@@ -89,12 +104,19 @@ export async function updateLocation(
     }
     await db
       .update(locations)
-      .set({ name: name })
+      .set({ name: name, updatedAt: new Date() })
       .where(and(eq(locations.id, id), eq(locations.companyId, companyId)));
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-locations`);
+    revalidateTag(`company-${companyId}-inventory`);
+    revalidateTag(`company-${companyId}-schedule`);
+
     return { status: "success", message: "Location updated successfully." };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to update location:", error);
@@ -115,7 +137,9 @@ export async function deleteLocation(
   formData: FormData
 ): Promise<Omit<LocationFormState, "errors">> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = DeleteLocationSchema.safeParse({
@@ -141,16 +165,23 @@ export async function deleteLocation(
     await db
       .delete(locations)
       .where(and(eq(locations.id, id), eq(locations.companyId, companyId)));
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-locations`);
+    revalidateTag(`company-${companyId}-inventory`);
+    revalidateTag(`company-${companyId}-schedule`);
+
     return { status: "success", message: "Location deleted successfully." };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to delete location:", error);
     return {
       status: "error",
-      message: "Database error: Failed to delete location.",
+      message: "Database error: Failed to delete location. It might be in use.",
     };
   }
 }

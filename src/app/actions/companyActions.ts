@@ -12,7 +12,7 @@ import {
   NotAuthenticatedError,
   CompanyNotFoundError,
 } from "@/lib/errors";
-import { revalidateCompanyPaths } from "@/lib/cache/revalidateCompanyPaths";
+import { revalidateTag } from "next/cache";
 import { clearActiveCompanyCookieAction } from "./companyContextActions";
 import { eq, and } from "drizzle-orm";
 
@@ -74,7 +74,11 @@ export async function createCompanyAndAssociateEmployee(
       return createdCompany;
     });
 
-    revalidateCompanyPaths(newCompany.id);
+    // Revalidate caches related to companies and employees for the new company
+    revalidateTag(`company-${newCompany.id}-companies`);
+    revalidateTag(`company-${newCompany.id}-employees`);
+    // It might also be relevant to revalidate a list of companies for the user,
+    // e.g., revalidateTag(`user-${user.id}-company-list`); if such a tag is used.
 
     return {
       message: "Company created successfully!",
@@ -171,7 +175,19 @@ export async function deleteCompanyAction(
       await clearActiveCompanyCookieAction();
     }
 
-    revalidateCompanyPaths(companyIdToDelete);
+    // Invalidate all data related to the deleted company
+    revalidateTag(`company-${companyIdToDelete}-companies`);
+    revalidateTag(`company-${companyIdToDelete}-employees`);
+    revalidateTag(`company-${companyIdToDelete}-roles`);
+    revalidateTag(`company-${companyIdToDelete}-locations`);
+    revalidateTag(`company-${companyIdToDelete}-inventory`);
+    revalidateTag(`company-${companyIdToDelete}-item_alerts`);
+    revalidateTag(`company-${companyIdToDelete}-shifts`);
+    revalidateTag(`company-${companyIdToDelete}-schedule`);
+    revalidateTag(`company-${companyIdToDelete}-threads`);
+    revalidateTag(`company-${companyIdToDelete}-messages`);
+    // A broader tag like revalidateTag(`company-${companyIdToDelete}-all_data`); could also be used
+    // if a more sweeping invalidation is preferred and supported.
 
     return { message: "Company deleted successfully.", success: true };
   } catch (error) {

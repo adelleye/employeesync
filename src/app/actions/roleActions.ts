@@ -4,10 +4,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { roles } from "@/lib/db/schema"; // employees import removed as user comes from getUserAndCompany
 import { eq, and } from "drizzle-orm";
-import { revalidateCompanyPaths } from "@/lib/cache/revalidateCompanyPaths";
+import { revalidateTag } from "next/cache";
 import { type RoleFormState } from "@/types/formStates";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
-import { AppError } from "@/lib/errors";
+import {
+  AppError,
+  NotAuthenticatedError,
+  CompanyNotFoundError,
+} from "@/lib/errors";
 
 // Schema for validating role name
 const RoleSchema = z.object({
@@ -32,7 +36,9 @@ export async function createRole(
   formData: FormData
 ): Promise<RoleFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = RoleSchema.safeParse({
@@ -54,10 +60,17 @@ export async function createRole(
       companyId: companyId,
     });
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-roles`);
+    revalidateTag(`company-${companyId}-employees`);
+    revalidateTag(`company-${companyId}-schedule`);
+
     return { status: "success", message: "Role created successfully." };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to create role:", error);
@@ -73,7 +86,9 @@ export async function updateRole(
   formData: FormData
 ): Promise<RoleFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = UpdateRoleSchema.safeParse({
@@ -102,13 +117,20 @@ export async function updateRole(
 
     await db
       .update(roles)
-      .set({ name: name })
+      .set({ name: name, updatedAt: new Date() })
       .where(and(eq(roles.id, id), eq(roles.companyId, companyId)));
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-roles`);
+    revalidateTag(`company-${companyId}-employees`);
+    revalidateTag(`company-${companyId}-schedule`);
+
     return { status: "success", message: "Role updated successfully." };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to update role:", error);
@@ -123,7 +145,9 @@ export async function deleteRole(
   formData: FormData
 ): Promise<Omit<RoleFormState, "errors">> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = DeleteRoleSchema.safeParse({
@@ -152,16 +176,23 @@ export async function deleteRole(
       .delete(roles)
       .where(and(eq(roles.id, id), eq(roles.companyId, companyId)));
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-roles`);
+    revalidateTag(`company-${companyId}-employees`);
+    revalidateTag(`company-${companyId}-schedule`);
+
     return { status: "success", message: "Role deleted successfully." };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to delete role:", error);
     return {
       status: "error",
-      message: "Database error: Failed to delete role.",
+      message: "Database error: Failed to delete role. It might be in use.",
     };
   }
 }

@@ -5,8 +5,12 @@ import { db } from "@/lib/db";
 import { employees, users, roles as rolesTable } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
-import { AppError } from "@/lib/errors"; // Assuming NotAuthenticatedError, CompanyNotFoundError are thrown by getUserAndCompany
-import { revalidatePath } from "next/cache";
+import {
+  AppError,
+  NotAuthenticatedError,
+  CompanyNotFoundError,
+} from "@/lib/errors"; // Updated imports
+import { revalidateTag } from "next/cache"; // Changed from revalidatePath
 
 // State Definition
 export type EmployeeFormState = {
@@ -62,7 +66,9 @@ export async function addEmployeeByEmail(
   formData: FormData
 ): Promise<EmployeeFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany(); // Destructure user
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = AddEmployeeSchema.safeParse({
@@ -139,12 +145,15 @@ export async function addEmployeeByEmail(
         userId: employees.userId,
       });
 
-    revalidatePath("/dashboard/settings/employees");
+    // revalidatePath("/dashboard/settings/employees");
+    revalidateTag(`company-${companyId}-employees`);
+    revalidateTag(`company-${companyId}-schedule`); // Employees affect schedule
+
     return {
       status: "success",
       message: `Employee ${
         employeeName || userToAdd.displayName || email
-      } added successfully.`, // Use employeeName if provided
+      } added successfully.`,
       data: {
         id: newEmployeeEntry.id,
         userId: newEmployeeEntry.userId ?? null,
@@ -157,7 +166,11 @@ export async function addEmployeeByEmail(
     };
   } catch (error) {
     console.error("addEmployeeByEmail Error:", error);
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     return {
@@ -168,11 +181,13 @@ export async function addEmployeeByEmail(
 }
 
 export async function updateEmployeeRoleAction(
-  prevState: EmployeeFormState | undefined, // Keep prevState for consistency with useFormState
+  prevState: EmployeeFormState | undefined,
   formData: FormData
 ): Promise<EmployeeFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany(); // Destructure user
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     // Ensure employeeId and newRoleId are strings from FormData
@@ -239,7 +254,10 @@ export async function updateEmployeeRoleAction(
         userId: employees.userId,
       });
 
-    revalidatePath("/dashboard/settings/employees");
+    // revalidatePath("/dashboard/settings/employees");
+    revalidateTag(`company-${companyId}-employees`);
+    revalidateTag(`company-${companyId}-schedule`); // Role changes affect schedule
+
     const effectiveName =
       updatedEmployee.name ||
       employeeToUpdate.user?.displayName ||
@@ -260,10 +278,17 @@ export async function updateEmployeeRoleAction(
     };
   } catch (error) {
     console.error("updateEmployeeRoleAction Error:", error);
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
-    return { status: "error", message: "Failed to update employee role." };
+    return {
+      status: "error",
+      message: "An unexpected error occurred while updating the employee role.",
+    };
   }
 }
 
@@ -271,39 +296,36 @@ export async function removeEmployeeAction(
   employeeId: string
 ): Promise<EmployeeFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany(); // Destructure user
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = RemoveEmployeeSchema.safeParse({ employeeId });
     if (!validatedFields.success) {
       return {
         status: "error",
-        message: "Invalid employee ID provided.",
+        message: "Invalid employee ID for removal.",
         errors: validatedFields.error.flatten().fieldErrors,
       };
     }
 
-    const employeeToDelete = await db.query.employees.findFirst({
+    const employeeToRemove = await db.query.employees.findFirst({
       where: and(
         eq(employees.id, validatedFields.data.employeeId),
         eq(employees.companyId, companyId)
       ),
       columns: { id: true, name: true },
-      with: { user: { columns: { email: true, displayName: true } } },
+      with: { user: { columns: { displayName: true, email: true } } },
     });
 
-    if (!employeeToDelete) {
+    if (!employeeToRemove) {
       return {
         status: "error",
         message: "Employee not found in this company.",
       };
     }
 
-    // CRITICAL NOTE: The current schema (employees.shifts relation) likely has onDelete: "cascade" for shifts.
-    // This means deleting an employee will also delete all their associated shifts.
-    // This is a destructive operation and might not be desired.
-    // Ideally, shifts.employee_id should be SET NULL or an admin should reassign them before deletion.
-    // Proceeding with delete as per current schema understanding for this action's scope.
     await db
       .delete(employees)
       .where(
@@ -313,26 +335,49 @@ export async function removeEmployeeAction(
         )
       );
 
-    revalidatePath("/dashboard/settings/employees");
+    // revalidatePath("/dashboard/settings/employees");
+    revalidateTag(`company-${companyId}-employees`);
+    revalidateTag(`company-${companyId}-schedule`); // Employee removal affects schedule
+    revalidateTag(`company-${companyId}-shifts`); // Also shifts directly
+
     const effectiveName =
-      employeeToDelete.name ||
-      employeeToDelete.user?.displayName ||
-      employeeToDelete.user?.email ||
-      "Employee ID: " + employeeToDelete.id;
+      employeeToRemove.name ||
+      employeeToRemove.user?.displayName ||
+      employeeToRemove.user?.email ||
+      "Employee";
+
     return {
       status: "success",
-      message: `Employee ${effectiveName} has been removed.`,
+      message: `Employee ${effectiveName} removed successfully.`,
     };
   } catch (error) {
     console.error("removeEmployeeAction Error:", error);
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
-    // Consider checking for db error codes if FK constraints prevent deletion due to related data not set to cascade/null.
+    // Specific check for foreign key constraint errors if shifts are not cascaded
+    // This depends on DB schema (onDelete behavior for employees.id in shifts table)
+    // If shifts.employeeId is set to RESTRICT or NO ACTION on employee deletion:
+    if (
+      error instanceof Error &&
+      error.message.includes("violates foreign key constraint")
+    ) {
+      if (error.message.includes("shifts_employee_id_fkey")) {
+        return {
+          status: "error",
+          message:
+            "Cannot remove employee. They are still assigned to one or more shifts. Please reassign or delete their shifts first.",
+          errors: { general: ["Employee has active shifts."] },
+        };
+      }
+    }
     return {
       status: "error",
-      message:
-        "Failed to remove employee. They might have dependent data (e.g., shifts) that needs to be handled.",
+      message: "An unexpected error occurred while removing the employee.",
     };
   }
 }

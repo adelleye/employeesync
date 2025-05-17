@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { cookies } from "next/headers";
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import { threads, messages, users, employees } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, sql } from "drizzle-orm";
@@ -121,9 +121,10 @@ export async function createThreadAction(
       throw new AppError("Failed to create thread due to a database error.");
     }
 
-    revalidatePath("/dashboard/messages");
+    revalidateTag(`company-${activeCompany.id}-threads`);
     if (shiftId) {
-      revalidatePath(`/dashboard/schedule`); // Or more specific if viewing a shift
+      revalidateTag(`company-${activeCompany.id}-schedule`);
+      revalidateTag(`company-${activeCompany.id}-shifts`);
     }
 
     return { message: "Thread created successfully." };
@@ -224,12 +225,15 @@ export async function postMessageAction(
       throw new AppError("Failed to post message due to a database error.");
     }
 
-    revalidatePath("/dashboard/messages");
+    revalidateTag(`company-${activeCompany.id}-messages`);
+    revalidateTag(`company-${activeCompany.id}-threads`);
+
     const threadDetails = await db.query.threads.findFirst({
       where: eq(threads.id, threadId),
     });
     if (threadDetails?.shiftId) {
-      revalidatePath(`/dashboard/schedule`);
+      revalidateTag(`company-${activeCompany.id}-schedule`);
+      revalidateTag(`company-${activeCompany.id}-shifts`);
     }
 
     return { message: "Message posted successfully." };

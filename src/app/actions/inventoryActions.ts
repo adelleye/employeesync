@@ -4,8 +4,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { items, stockAdjustments, locations } from "@/lib/db/schema";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
-import { AppError } from "@/lib/errors";
-import { revalidateCompanyPaths } from "@/lib/cache/revalidateCompanyPaths";
+import {
+  AppError,
+  NotAuthenticatedError,
+  CompanyNotFoundError,
+} from "@/lib/errors";
+import { revalidateTag } from "next/cache";
 import { and, eq, sql, asc } from "drizzle-orm";
 import type { ItemForInventoryPage } from "@/app/dashboard/(protected)/inventory/page";
 
@@ -47,7 +51,9 @@ export async function createItem(
   formData: FormData
 ): Promise<InventoryFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = CreateItemSchema.safeParse({
@@ -94,14 +100,20 @@ export async function createItem(
       })
       .returning();
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-inventory`);
+    revalidateTag(`company-${companyId}-item_alerts`);
+
     return {
       status: "success",
       message: "Item created successfully.",
       data: newItem,
     };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to create item:", error);
@@ -117,7 +129,9 @@ export async function updateItem(
   formData: FormData
 ): Promise<InventoryFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
     const itemId = formData.get("id") as string;
 
@@ -178,14 +192,20 @@ export async function updateItem(
       .where(and(eq(items.id, id), eq(items.companyId, companyId)))
       .returning();
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-inventory`);
+    revalidateTag(`company-${companyId}-item_alerts`);
+
     return {
       status: "success",
       message: "Item updated successfully.",
       data: updatedItem,
     };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to update item:", error);
@@ -200,7 +220,9 @@ export async function deleteItem(
   itemId: string
 ): Promise<Omit<InventoryFormState, "errors" | "data">> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     if (!itemId || typeof itemId !== "string") {
@@ -219,10 +241,16 @@ export async function deleteItem(
       .delete(items)
       .where(and(eq(items.id, itemId), eq(items.companyId, companyId)));
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-inventory`);
+    revalidateTag(`company-${companyId}-item_alerts`);
+
     return { status: "success", message: "Item deleted successfully." };
   } catch (error) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to delete item:", error);
@@ -238,7 +266,9 @@ export async function adjustStock(
   formData: FormData
 ): Promise<InventoryFormState> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = AdjustStockSchema.safeParse({
@@ -257,70 +287,69 @@ export async function adjustStock(
 
     const { itemId, delta, reason } = validatedFields.data;
 
+    const itemToAdjust = await db.query.items.findFirst({
+      where: and(eq(items.id, itemId), eq(items.companyId, companyId)),
+    });
+
+    if (!itemToAdjust) {
+      return { status: "error", message: "Item not found or access denied." };
+    }
+
     if (delta === 0) {
       return {
         status: "error",
-        message: "Delta cannot be zero for a stock adjustment.",
-        errors: { delta: ["Delta must be a non-zero integer."] },
+        message: "Adjustment amount cannot be zero.",
+        errors: { delta: ["Delta cannot be zero."] },
       };
     }
 
-    const updatedItemData = await db.transaction(async (tx) => {
-      // Manually construct the select with FOR UPDATE if forUpdate() method is problematic with types
-      const result = await tx.execute(sql`
-        SELECT * FROM ${items}
-        WHERE ${items.id} = ${itemId} AND ${items.companyId} = ${companyId}
-        FOR UPDATE
-      `);
+    const newQtyOnHand = (itemToAdjust.qtyOnHand || 0) + delta;
 
-      const currentItem = result.rows[0] as
-        | typeof items.$inferSelect
-        | undefined;
+    if (newQtyOnHand < 0) {
+      return {
+        status: "error",
+        message: "Stock quantity cannot go below zero.",
+        errors: { delta: ["Resulting quantity cannot be negative."] },
+      };
+    }
 
-      if (!currentItem) {
-        throw new AppError(
-          "Item not found or access denied for stock adjustment."
-        );
-      }
-
-      const newQtyOnHand = (currentItem.qtyOnHand || 0) + delta;
-      if (newQtyOnHand < 0) {
-        throw new AppError(
-          "Stock quantity cannot be negative after adjustment.",
-          "qtyOnHand"
-        );
-      }
-
+    const updatedItem = await db.transaction(async (tx) => {
       const [updated] = await tx
         .update(items)
-        .set({
-          qtyOnHand: newQtyOnHand,
-          updatedAt: new Date(),
-        })
-        .where(eq(items.id, itemId))
+        .set({ qtyOnHand: newQtyOnHand, updatedAt: new Date() })
+        .where(and(eq(items.id, itemId), eq(items.companyId, companyId)))
         .returning();
+
+      if (!updated) {
+        throw new AppError(
+          "Failed to update item quantity during transaction."
+        );
+      }
 
       await tx.insert(stockAdjustments).values({
         itemId,
         delta,
         reason,
       });
+
       return updated;
     });
-    revalidateCompanyPaths(companyId);
+
+    revalidateTag(`company-${companyId}-inventory`);
+    revalidateTag(`company-${companyId}-item_alerts`);
+
     return {
       status: "success",
       message: "Stock adjusted successfully.",
-      data: updatedItemData,
+      data: updatedItem,
     };
   } catch (error) {
-    if (error instanceof AppError) {
-      return {
-        status: "error",
-        message: error.message,
-        errors:
-          error.field === "qtyOnHand" ? { delta: [error.message] } : undefined,
-      };
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
+      return { status: "error", message: error.message };
     }
     console.error("Failed to adjust stock:", error);
     return {
@@ -330,7 +359,6 @@ export async function adjustStock(
   }
 }
 
-// Server Action to fetch paginated items
 export async function fetchItemsPaginated({
   companyId,
   limit,
@@ -340,15 +368,18 @@ export async function fetchItemsPaginated({
   limit: number;
   offset: number;
 }): Promise<ItemForInventoryPage[] | null> {
-  // No need to call getUserAndCompany() here if companyId is passed correctly
-  // and RLS is set up based on a custom claim set by getUserAndCompany during initial page load.
-  // However, if direct access to this action is possible without prior auth context,
-  // you MIGHT need to re-verify company access, but that makes it less efficient for this specific use case.
-  // For now, assume companyId is validated from the client context which got it from an authenticated page load.
   try {
-    const itemsData = await db.query.items.findMany({
+    const { activeCompany } = await getUserAndCompany();
+    if (!activeCompany || activeCompany.id !== companyId) {
+      console.warn(
+        `fetchItemsPaginated: Permission denied or company mismatch. Requested: ${companyId}, Active: ${activeCompany?.id}`
+      );
+      return null;
+    }
+
+    const paginatedItems = await db.query.items.findMany({
       where: eq(items.companyId, companyId),
-      orderBy: [asc(items.name)], // Ensure consistent ordering
+      orderBy: [asc(items.name)],
       limit: limit,
       offset: offset,
       with: {
@@ -359,15 +390,31 @@ export async function fetchItemsPaginated({
         },
       },
     });
-
-    const result = itemsData.map((item) => ({
-      ...item,
-      locationName: item.location?.name ?? null,
-    }));
-    return result;
+    return paginatedItems as ItemForInventoryPage[];
   } catch (error) {
-    console.error("Failed to fetch paginated items:", error);
-    // In a real app, you might throw a specific error or return a structured error response
-    return null; // Or throw error to be caught by client
+    console.error("Error fetching paginated items:", error);
+    return null;
+  }
+}
+
+export async function getTotalItemCount(companyId: string): Promise<number> {
+  try {
+    const { activeCompany } = await getUserAndCompany();
+    if (!activeCompany || activeCompany.id !== companyId) {
+      console.warn(
+        `getTotalItemCount: Permission denied or company mismatch. Requested: ${companyId}, Active: ${activeCompany?.id}`
+      );
+      return 0;
+    }
+
+    const result = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(items)
+      .where(eq(items.companyId, companyId));
+
+    return result[0]?.count || 0;
+  } catch (error) {
+    console.error("Error fetching total item count:", error);
+    return 0;
   }
 }

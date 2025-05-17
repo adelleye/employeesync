@@ -4,9 +4,13 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { employees, shifts } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { revalidateCompanyPaths } from "@/lib/cache/revalidateCompanyPaths";
+import { revalidateTag } from "next/cache";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
-import { AppError } from "@/lib/errors";
+import {
+  AppError,
+  NotAuthenticatedError,
+  CompanyNotFoundError,
+} from "@/lib/errors";
 
 // Define a basic form state type (can be expanded later)
 export type ShiftFormState = {
@@ -60,6 +64,8 @@ export async function createShift(
 ): Promise<ShiftFormState> {
   try {
     const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     // user will not be null here due to getUserAndCompany throwing NotAuthenticatedError
@@ -150,20 +156,26 @@ export async function createShift(
       notes: notes,
     });
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-schedule`);
+    revalidateTag(`company-${companyId}-shifts`);
     return {
       status: "success",
       message: "Shift created successfully.",
       errors: {},
     };
   } catch (error: any) {
-    if (error instanceof AppError) {
-      // AppError can be thrown by getUserAndCompany
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to create shift:", error);
-    if (error.code === "23P01") {
-      // Example: Unique constraint violation
+    if (
+      error.code === "23P01" ||
+      (error.message && error.message.includes("violates exclusion constraint"))
+    ) {
       return {
         status: "error",
         message:
@@ -188,6 +200,8 @@ export async function updateShift(
 ): Promise<ShiftFormState> {
   try {
     const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     const validatedFields = UpdateShiftSchema.safeParse({
@@ -251,19 +265,26 @@ export async function updateShift(
       })
       .where(and(eq(shifts.id, id), eq(shifts.companyId, companyId)));
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-schedule`);
+    revalidateTag(`company-${companyId}-shifts`);
     return {
       status: "success",
       message: "Shift updated successfully.",
       errors: {},
     };
   } catch (error: any) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to update shift:", error);
-    if (error.code === "23P01") {
-      // Example: Unique constraint violation
+    if (
+      error.code === "23P01" ||
+      (error.message && error.message.includes("violates exclusion constraint"))
+    ) {
       return {
         status: "error",
         message:
@@ -286,7 +307,9 @@ export async function deleteShift(
   shiftId: string
 ): Promise<{ status: string; message: string }> {
   try {
-    const { activeCompany } = await getUserAndCompany();
+    const { user, activeCompany } = await getUserAndCompany();
+    if (!user) throw new NotAuthenticatedError();
+    if (!activeCompany) throw new CompanyNotFoundError();
     const companyId = activeCompany.id;
 
     if (!shiftId || typeof shiftId !== "string") {
@@ -307,10 +330,15 @@ export async function deleteShift(
       .delete(shifts)
       .where(and(eq(shifts.id, shiftId), eq(shifts.companyId, companyId)));
 
-    revalidateCompanyPaths(companyId);
+    revalidateTag(`company-${companyId}-schedule`);
+    revalidateTag(`company-${companyId}-shifts`);
     return { status: "success", message: "Shift deleted successfully." };
   } catch (error: any) {
-    if (error instanceof AppError) {
+    if (
+      error instanceof AppError ||
+      error instanceof NotAuthenticatedError ||
+      error instanceof CompanyNotFoundError
+    ) {
       return { status: "error", message: error.message };
     }
     console.error("Failed to delete shift:", error);
