@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import {
   ColumnDef,
   flexRender,
@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -29,11 +30,15 @@ import {
   Edit,
   Trash2,
   PackagePlus,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 // Import server actions (adjust paths as needed)
-import { deleteItem } from "@/app/actions/inventoryActions";
+import {
+  deleteItem,
+  fetchItemsPaginated,
+} from "@/app/actions/inventoryActions";
 
 // Import form components
 import AddItemForm from "./AddItemForm";
@@ -41,19 +46,25 @@ import EditItemForm from "./EditItemForm";
 import AdjustStockForm from "./AdjustStockForm";
 
 interface InventoryClientPageProps {
-  items: ItemForInventoryPage[];
+  initialItems: ItemForInventoryPage[];
+  totalItems: number;
+  itemsPerPage: number;
   locations: LocationForInventoryPage[];
   companyId: string;
 }
 
 export default function InventoryClientPage({
-  items: initialItems,
+  initialItems: serverInitialItems,
+  totalItems,
+  itemsPerPage,
   locations,
   companyId,
 }: InventoryClientPageProps) {
   const [items, setItems] = useState<ItemForInventoryPage[]>(
-    initialItems.sort((a, b) => a.name.localeCompare(b.name))
+    serverInitialItems.sort((a, b) => a.name.localeCompare(b.name))
   );
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [globalFilter, setGlobalFilter] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemForInventoryPage | null>(
@@ -61,6 +72,89 @@ export default function InventoryClientPage({
   );
   const [adjustingStockItem, setAdjustingStockItem] =
     useState<ItemForInventoryPage | null>(null);
+
+  // Add useEffect to update items state when serverInitialItems prop changes
+  useEffect(() => {
+    const sortedNewItems = [...serverInitialItems].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+    setItems(sortedNewItems);
+    // Reset pagination when initial items change (e.g., due to company switch)
+    setCurrentPage(1);
+  }, [serverInitialItems]);
+
+  const handleLoadMore = async () => {
+    if (isLoadingMore || items.length >= totalItems) return;
+
+    setIsLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const newItems = await fetchItemsPaginated({
+        companyId,
+        limit: itemsPerPage,
+        offset: (nextPage - 1) * itemsPerPage,
+      });
+      if (newItems) {
+        setItems((prevItems) =>
+          [...prevItems, ...newItems].sort((a, b) =>
+            a.name.localeCompare(b.name)
+          )
+        );
+        setCurrentPage(nextPage);
+      }
+    } catch (error) {
+      console.error("Failed to load more items:", error);
+      toast.error("Failed to load more items.");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Memoize callback for AddItemForm
+  const handleAddItemSuccess = useCallback((newItem: ItemForInventoryPage) => {
+    setItems((prev) =>
+      [newItem, ...prev].sort((a, b) => a.name.localeCompare(b.name))
+    );
+    setIsAddModalOpen(false);
+  }, []);
+
+  const handleAddItemCancel = useCallback(() => {
+    setIsAddModalOpen(false);
+  }, []);
+
+  // Memoize callback for EditItemForm
+  const handleEditItemSuccess = useCallback(
+    (updatedItem: ItemForInventoryPage) => {
+      setItems((prev) =>
+        prev
+          .map((item) => (item.id === updatedItem.id ? updatedItem : item))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setEditingItem(null);
+    },
+    []
+  );
+
+  const handleEditItemCancel = useCallback(() => {
+    setEditingItem(null);
+  }, []);
+
+  // Memoize callback for AdjustStockForm
+  const handleAdjustStockSuccess = useCallback(
+    (updatedItem: ItemForInventoryPage) => {
+      setItems((prev) =>
+        prev
+          .map((item) => (item.id === updatedItem.id ? updatedItem : item))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setAdjustingStockItem(null);
+    },
+    []
+  ); // Dependencies: setItems, setAdjustingStockItem
+
+  const handleAdjustStockCancel = useCallback(() => {
+    setAdjustingStockItem(null);
+  }, []); // Dependencies: setAdjustingStockItem
 
   const columns = useMemo<ColumnDef<ItemForInventoryPage>[]>(
     () => [
@@ -102,6 +196,9 @@ export default function InventoryClientPage({
               <DialogContent className="sm:max-w-xs">
                 <DialogHeader>
                   <DialogTitle>{item.name}</DialogTitle>
+                  <DialogDescription>
+                    Actions for {item.name}.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-col space-y-1 pt-2">
                   <Button
@@ -195,20 +292,15 @@ export default function InventoryClientPage({
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Add New Inventory Item</DialogTitle>
+              <DialogDescription>
+                Fill in the details below to add a new item to your inventory.
+              </DialogDescription>
             </DialogHeader>
             <AddItemForm
               companyId={companyId}
               locations={locations}
-              onSuccess={(newItem) => {
-                // Add to local state, ideally sort or place appropriately
-                setItems((prev) =>
-                  [newItem, ...prev].sort((a, b) =>
-                    a.name.localeCompare(b.name)
-                  )
-                );
-                setIsAddModalOpen(false);
-              }}
-              onCancel={() => setIsAddModalOpen(false)}
+              onSuccess={handleAddItemSuccess}
+              onCancel={handleAddItemCancel}
             />
           </DialogContent>
         </Dialog>
@@ -222,21 +314,15 @@ export default function InventoryClientPage({
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Edit: {editingItem.name}</DialogTitle>
+              <DialogDescription>
+                Update the details for {editingItem.name}.
+              </DialogDescription>
             </DialogHeader>
             <EditItemForm
               item={editingItem}
               locations={locations}
-              onSuccess={(updatedItem) => {
-                setItems((prev) =>
-                  prev
-                    .map((item) =>
-                      item.id === updatedItem.id ? updatedItem : item
-                    )
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                );
-                setEditingItem(null);
-              }}
-              onCancel={() => setEditingItem(null)}
+              onSuccess={handleEditItemSuccess}
+              onCancel={handleEditItemCancel}
             />
           </DialogContent>
         </Dialog>
@@ -250,20 +336,15 @@ export default function InventoryClientPage({
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Adjust Stock: {adjustingStockItem.name}</DialogTitle>
+              <DialogDescription>
+                Current quantity: {adjustingStockItem.qtyOnHand}. Enter the
+                adjustment amount.
+              </DialogDescription>
             </DialogHeader>
             <AdjustStockForm
               item={adjustingStockItem}
-              onSuccess={(updatedItem) => {
-                setItems((prev) =>
-                  prev
-                    .map((item) =>
-                      item.id === updatedItem.id ? updatedItem : item
-                    )
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                );
-                setAdjustingStockItem(null);
-              }}
-              onCancel={() => setAdjustingStockItem(null)}
+              onSuccess={handleAdjustStockSuccess}
+              onCancel={handleAdjustStockCancel}
             />
           </DialogContent>
         </Dialog>

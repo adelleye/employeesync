@@ -18,6 +18,10 @@ interface SetActiveCompanyResult {
 export async function setActiveCompanyAction(
   companyId: string
 ): Promise<SetActiveCompanyResult> {
+  console.log(
+    "[Server Action] setActiveCompanyAction: Setting companyId:",
+    companyId
+  );
   const cookieStore = await cookies();
   const supabase = createSupabaseServerClient(cookieStore);
 

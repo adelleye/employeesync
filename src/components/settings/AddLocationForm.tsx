@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { createLocation } from "@/app/actions/locationActions";
 import { type LocationFormState } from "@/types/formStates";
 import { useEffect, useRef } from "react";
@@ -31,7 +32,7 @@ function SubmitButton() {
 // }
 
 export default function AddLocationForm() {
-  const [state, formAction] = useFormState(createLocation, initialState);
+  const [state, formAction] = useActionState(createLocation, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   // No need for useToast hook anymore
   // const { toast } = useToast();

@@ -81,7 +81,7 @@ export default function SidebarNav({
       icon: MessageSquare,
       active: pathname.startsWith("/dashboard/messages"),
       visible: !!currentCompanyId,
-      disabled: true,
+      disabled: false,
     },
     {
       href: "/dashboard/settings",
@@ -113,7 +113,7 @@ export default function SidebarNav({
       icon: Users,
       active: pathname.startsWith("/dashboard/settings/employees"),
       visible: !!companyId,
-      disabled: true,
+      disabled: false,
     },
   ];
 

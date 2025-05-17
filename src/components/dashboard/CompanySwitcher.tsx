@@ -59,8 +59,12 @@ export function CompanySwitcher() {
           console.error("Failed to switch company:", result.message);
           // Optionally revert optimistic update here if needed
           // setActiveCompanyOptimistic(activeCompany); // Revert
+        } else {
+          // Ensure the optimistic update is confirmed or not reverted
+          // If setActiveCompanyOptimistic was called, it should align with the new state
         }
-        router.refresh(); // This will re-fetch server components and update the provider
+        router.refresh();
+        console.log("[CompanySwitcher] router.refresh() called directly.");
       } catch (error) {
         console.error("Error switching company:", error);
         toast.error("An unexpected error occurred while switching companies."); // Uncommented and improved message

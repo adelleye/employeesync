@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { createRole } from "@/app/actions/roleActions"; // Use createRole action
 import { type RoleFormState } from "@/types/formStates"; // Use RoleFormState
 import { useEffect, useRef } from "react";
@@ -24,7 +25,7 @@ function SubmitButton() {
 }
 
 export default function AddRoleForm() {
-  const [state, formAction] = useFormState(createRole, initialState);
+  const [state, formAction] = useActionState(createRole, initialState);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {

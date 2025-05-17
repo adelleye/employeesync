@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { toast } from "sonner";
 import { createItem, InventoryFormState } from "@/app/actions/inventoryActions";
 import { LocationForInventoryPage } from "@/app/dashboard/(protected)/inventory/page";
@@ -46,7 +47,7 @@ export default function AddItemForm({
   onSuccess,
   onCancel,
 }: AddItemFormProps) {
-  const [state, formAction] = useFormState(createItem, initialState);
+  const [state, formAction] = useActionState(createItem, initialState);
 
   useEffect(() => {
     if (state.status === "success") {
@@ -106,9 +107,6 @@ export default function AddItemForm({
             <SelectValue placeholder="Select a location" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">
-              <em>None</em>
-            </SelectItem>
             {locations.map((location) => (
               <SelectItem key={location.id} value={location.id}>
                 {location.name}

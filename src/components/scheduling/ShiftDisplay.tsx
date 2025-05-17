@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
+import { useRouter } from "next/navigation";
 
 // Export the Shift type definition
 export type Shift = {
@@ -65,6 +66,7 @@ export default function ShiftDisplay({
   const [editError, setEditError] = useState<string | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const router = useRouter();
 
   // Set up the virtualizer
   const rowVirtualizer = useVirtualizer({
@@ -194,6 +196,18 @@ export default function ShiftDisplay({
                             }}
                           >
                             Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="ml-2"
+                            onClick={() => {
+                              router.push(
+                                `/dashboard/messages?shiftId=${shift.id}`
+                              );
+                            }}
+                          >
+                            Discuss
                           </Button>
                           <Button
                             size="sm"

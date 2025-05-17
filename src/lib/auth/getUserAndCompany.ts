@@ -62,6 +62,10 @@ export async function getUserAndCompany(): Promise<GetUserAndCompanyReturn> {
   const requestedCompanyIdFromCookie = cookieStore.get(
     ACTIVE_COMPANY_COOKIE
   )?.value;
+  console.log(
+    "[getUserAndCompany] Requested companyId from cookie:",
+    requestedCompanyIdFromCookie
+  );
   // Removed: let mustSetCookie = false;
 
   if (requestedCompanyIdFromCookie) {
@@ -97,6 +101,10 @@ export async function getUserAndCompany(): Promise<GetUserAndCompanyReturn> {
     );
     activeCompany = allUserCompanies[0]; // Should always have at least one due to earlier check
   }
+  console.log(
+    "[getUserAndCompany] Resolved activeCompany.id:",
+    activeCompany.id
+  );
 
   return {
     user,

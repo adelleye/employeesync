@@ -22,6 +22,8 @@ export interface ScheduleTabsProps {
   locations: any[];
   companyId: string;
   shiftTemplates: any[];
+  initialStartDate?: string;
+  initialEndDate?: string;
 }
 
 export default function ScheduleTabs({
@@ -31,6 +33,8 @@ export default function ScheduleTabs({
   locations,
   companyId,
   shiftTemplates,
+  initialStartDate,
+  initialEndDate,
 }: ScheduleTabsProps) {
   const [activeTab, setActiveTab] = useState<"schedule" | "templates">(
     "schedule"

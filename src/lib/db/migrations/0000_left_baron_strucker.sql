@@ -113,5 +113,5 @@ ALTER TABLE "shifts" ADD CONSTRAINT "shifts_company_id_companies_id_fk" FOREIGN 
 ALTER TABLE "shifts" ADD CONSTRAINT "shifts_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "shifts" ADD CONSTRAINT "shifts_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_adjustments" ADD CONSTRAINT "stock_adjustments_item_id_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "company_user_idx" ON "employees" USING btree ("company_id","user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "company_sku_idx" ON "items" USING btree ("company_id","sku");
+CREATE UNIQUE INDEX IF NOT EXISTS "employees_company_user_uidx" ON "employees" USING btree ("company_id","user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "items_company_sku_idx" ON "items" USING btree ("company_id","sku");

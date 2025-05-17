@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { toast } from "sonner";
 import {
   adjustStock,
@@ -40,7 +41,7 @@ export default function AdjustStockForm({
   onSuccess,
   onCancel,
 }: AdjustStockFormProps) {
-  const [state, formAction] = useFormState(adjustStock, initialState);
+  const [state, formAction] = useActionState(adjustStock, initialState);
 
   useEffect(() => {
     if (state.status === "success") {

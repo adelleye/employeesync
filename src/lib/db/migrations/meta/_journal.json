@@ -8,6 +8,27 @@
       "when": 1700000000000,
       "tag": "0000_left_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1747512956099,
+      "tag": "0001_deep_hellfire_club",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747518414531,
+      "tag": "0002_messy_ultragirl",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1747519373289,
+      "tag": "0003_boring_speed",
+      "breakpoints": true
     }
   ]
 }

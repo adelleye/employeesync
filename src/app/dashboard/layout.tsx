@@ -4,6 +4,9 @@ import SidebarNav from "@/components/dashboard/SidebarNav";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
 import { ActiveCompanyProvider } from "@/components/providers/ActiveCompanyProvider";
 import { NotAuthenticatedError, CompanyNotFoundError } from "@/lib/errors";
+import LowStockAlertBanner from "@/components/notifications/LowStockAlertBanner";
+
+export const revalidate = 0; // Ensure dynamic rendering for the dashboard layout and its children
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -16,6 +19,10 @@ export default async function DashboardLayout({
 
   try {
     const { user, activeCompany, allUserCompanies } = await getUserAndCompany();
+    console.log(
+      "[DashboardLayout] activeCompany.id from getUserAndCompany:",
+      activeCompany.id
+    );
 
     return (
       <ActiveCompanyProvider
@@ -33,6 +40,7 @@ export default async function DashboardLayout({
             {children}
           </main>
         </div>
+        <LowStockAlertBanner />
       </ActiveCompanyProvider>
     );
   } catch (error) {

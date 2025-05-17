@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { toast } from "sonner";
 import { updateItem, InventoryFormState } from "@/app/actions/inventoryActions";
 import {
@@ -49,8 +50,8 @@ export default function EditItemForm({
   onCancel,
 }: EditItemFormProps) {
   // The server action expects `prevState` first, then `formData`.
-  // `useFormState` will pass the current state as the first argument to the action.
-  const [state, formAction] = useFormState(updateItem, initialState);
+  // `useActionState` will pass the current state as the first argument to the action.
+  const [state, formAction] = useActionState(updateItem, initialState);
 
   useEffect(() => {
     if (state.status === "success") {
@@ -110,14 +111,11 @@ export default function EditItemForm({
 
       <div>
         <Label htmlFor="edit-locationId">Location (Optional)</Label>
-        <Select name="locationId" defaultValue={item.locationId ?? ""}>
+        <Select name="locationId" defaultValue={item.locationId ?? undefined}>
           <SelectTrigger>
             <SelectValue placeholder="Select a location" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">
-              <em>None</em>
-            </SelectItem>
             {locations.map((location) => (
               <SelectItem key={location.id} value={location.id}>
                 {location.name}

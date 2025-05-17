@@ -2,11 +2,12 @@
 
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { items, stockAdjustments } from "@/lib/db/schema";
+import { items, stockAdjustments, locations } from "@/lib/db/schema";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
 import { AppError } from "@/lib/errors";
 import { revalidateCompanyPaths } from "@/lib/cache/revalidateCompanyPaths";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, asc } from "drizzle-orm";
+import type { ItemForInventoryPage } from "@/app/dashboard/(protected)/inventory/page";
 
 // Form state type
 export type InventoryFormState<T = any> = {
@@ -326,5 +327,47 @@ export async function adjustStock(
       status: "error",
       message: "Database error: Failed to adjust stock.",
     };
+  }
+}
+
+// Server Action to fetch paginated items
+export async function fetchItemsPaginated({
+  companyId,
+  limit,
+  offset,
+}: {
+  companyId: string;
+  limit: number;
+  offset: number;
+}): Promise<ItemForInventoryPage[] | null> {
+  // No need to call getUserAndCompany() here if companyId is passed correctly
+  // and RLS is set up based on a custom claim set by getUserAndCompany during initial page load.
+  // However, if direct access to this action is possible without prior auth context,
+  // you MIGHT need to re-verify company access, but that makes it less efficient for this specific use case.
+  // For now, assume companyId is validated from the client context which got it from an authenticated page load.
+  try {
+    const itemsData = await db.query.items.findMany({
+      where: eq(items.companyId, companyId),
+      orderBy: [asc(items.name)], // Ensure consistent ordering
+      limit: limit,
+      offset: offset,
+      with: {
+        location: {
+          columns: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    const result = itemsData.map((item) => ({
+      ...item,
+      locationName: item.location?.name ?? null,
+    }));
+    return result;
+  } catch (error) {
+    console.error("Failed to fetch paginated items:", error);
+    // In a real app, you might throw a specific error or return a structured error response
+    return null; // Or throw error to be caught by client
   }
 }

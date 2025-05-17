@@ -3,7 +3,7 @@ import {
   items as itemsTable,
   locations as locationsTable,
 } from "@/lib/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, count } from "drizzle-orm";
 import { getUserAndCompany } from "@/lib/auth/getUserAndCompany";
 import { NotAuthenticatedError, CompanyNotFoundError } from "@/lib/errors";
 import { redirect } from "next/navigation";
@@ -15,6 +15,8 @@ export type ItemForInventoryPage = typeof itemsTable.$inferSelect & {
   locationName?: string | null;
 };
 export type LocationForInventoryPage = typeof locationsTable.$inferSelect;
+
+const ITEMS_PER_PAGE = 50; // Define items per page for pagination
 
 export default async function InventoryPage() {
   let activeCompanyId: string;
@@ -47,13 +49,17 @@ export default async function InventoryPage() {
     );
   }
 
-  let fetchedItems: ItemForInventoryPage[] = [];
+  let initialItems: ItemForInventoryPage[] = [];
+  let totalItemsCount = 0;
   let fetchedLocations: LocationForInventoryPage[] = [];
 
   try {
+    // Fetch first page of items
     const itemsData = await db.query.items.findMany({
       where: eq(itemsTable.companyId, activeCompanyId),
       orderBy: [asc(itemsTable.name)],
+      limit: ITEMS_PER_PAGE,
+      offset: 0, // Start with the first page
       with: {
         location: {
           columns: {
@@ -63,11 +69,20 @@ export default async function InventoryPage() {
       },
     });
 
-    fetchedItems = itemsData.map((item) => ({
+    initialItems = itemsData.map((item) => ({
       ...item,
       locationName: item.location?.name ?? null,
     }));
 
+    // Fetch total count of items for the company
+    const totalCountResult = await db
+      .select({ value: count() })
+      .from(itemsTable)
+      .where(eq(itemsTable.companyId, activeCompanyId));
+    totalItemsCount = totalCountResult[0]?.value ?? 0;
+
+    // Fetch all locations (assuming locations list is not excessively large)
+    // If locations can also be very numerous, pagination might be needed here too.
     fetchedLocations = await db.query.locations.findMany({
       where: eq(locationsTable.companyId, activeCompanyId),
       orderBy: [asc(locationsTable.name)],
@@ -88,7 +103,10 @@ export default async function InventoryPage() {
 
   return (
     <InventoryClientPage
-      items={fetchedItems}
+      key={activeCompanyId}
+      initialItems={initialItems}
+      totalItems={totalItemsCount} // Pass total count
+      itemsPerPage={ITEMS_PER_PAGE} // Pass items per page
       locations={fetchedLocations}
       companyId={activeCompanyId}
     />
